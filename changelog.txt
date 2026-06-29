@@ -1,0 +1,10 @@
+Version: 2.0.0
+Date: 2026-06-29
+  Changes:
+    - Rebuilt info.json so the mod loads as a valid Factorio 2.0 mod.
+    - Declared Factorio 2.0 compatibility and base dependency metadata.
+    - Ported core scenario/mod scripts for Factorio 2.0 API changes.
+    - Reworked GUI restoration and spawn/shop initialization for better reload stability.
+    - Added package_mod.bat for local zip packaging and deployment to the Factorio mods folder.
+    - Rounded buy/sell coin values to whole numbers.
+    - Added admin self-funding and requester chest auto-buy support in the market.

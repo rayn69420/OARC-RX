@@ -1,0 +1,1110 @@
+-- shared_chests.lua
+-- Feb 2020
+-- Oarc's silly idea for a scripted item sharing solution.
+-- Buffer size is the limit of joules/tick so multiply by 60 to get /sec.
+local tools = require("addons.tools")
+-- local flying_tag = require("flying_tags")
+
+local SHARED_STORAGE_CHEST_NAME = "storage-chest"
+local SHARED_REQUESTER_CHEST_NAME = "requester-chest"
+
+local function get_constant_combinator_section(combinator)
+    if not combinator or not combinator.valid then return nil end
+    local behavior = combinator.get_or_create_control_behavior()
+    if not behavior or not behavior.valid then return nil end
+    local section = behavior.get_section(1)
+    if not section then
+        section = behavior.add_section()
+    end
+    return section
+end
+
+local function get_constant_combinator_signal(combinator, slot_index)
+    local section = get_constant_combinator_section(combinator)
+    if not section then return nil end
+    local filter = section.get_slot(slot_index)
+    if not filter or not filter.value then return nil end
+    return {
+        signal = filter.value,
+        count = filter.min or 0
+    }
+end
+
+local function set_constant_combinator_signal(combinator, slot_index, signal)
+    local section = get_constant_combinator_section(combinator)
+    if not section then return end
+    if signal and signal.signal then
+        local signal_filter = {
+            name = signal.signal.name,
+            type = signal.signal.type,
+            quality = signal.signal.quality,
+            comparator = signal.signal.comparator
+        }
+        if (signal.count or 0) ~= 0 then
+            if not signal_filter.quality then
+                signal_filter.quality = "normal"
+            end
+            if not signal_filter.comparator then
+                signal_filter.comparator = "="
+            end
+        end
+        section.set_slot(slot_index, {
+            value = signal_filter,
+            min = signal.count or 0
+        })
+    else
+        section.clear_slot(slot_index)
+    end
+end
+
+local function get_constant_combinator_signal_count(combinator)
+    local section = get_constant_combinator_section(combinator)
+    if not section then return 0 end
+    return section.filters_count or 0
+end
+
+local function get_requester_chest_section(chest)
+    if not chest or not chest.valid then return nil end
+    local requester_point = chest.get_requester_point()
+    if not requester_point or not requester_point.valid then return nil end
+    return requester_point.get_section(1)
+end
+
+local function get_requester_chest_slot_count(chest)
+    if not chest or not chest.valid or not chest.prototype then return 0 end
+    return chest.prototype.filter_count or 0
+end
+
+local function get_requester_chest_slot(chest, slot_index)
+    local section = get_requester_chest_section(chest)
+    if not section or not section.valid then return nil end
+    local filter = section.get_slot(slot_index)
+    if not filter or not filter.value or not filter.value.name then
+        return nil
+    end
+    return {
+        name = filter.value.name,
+        count = filter.max or filter.min or 0
+    }
+end
+
+SHARED_ELEC_OUTPUT_BUFFER_SIZE = 1000000000
+SHARED_ELEC_INPUT_BUFFER_SIZE = 1000000001
+
+SHARED_ENERGY_STARTING_VALUE = 0 -- 100GJ
+
+function EnsureSharedChestGlobals()
+    if (game and game.forces and (game.forces["shared"] == nil)) then
+        game.create_force("shared")
+    end
+    if (game and game.forces and game.forces["shared"] and game.forces[MAIN_FORCE]) then
+        game.forces["shared"].set_friend(MAIN_FORCE, true)
+    end
+
+    global.oshared = global.oshared or {}
+    global.oshared.chests = global.oshared.chests or {}
+    global.oshared.requests = global.oshared.requests or {}
+    global.oshared.requests_totals = global.oshared.requests_totals or {}
+    global.oshared.electricity_inputs = global.oshared.electricity_inputs or {}
+    global.oshared.electricity_outputs = global.oshared.electricity_outputs or {}
+    global.oshared.chests_combinators = global.oshared.chests_combinators or {}
+    global.oshared.items = global.oshared.items or {}
+
+    if (global.oshared.items["red-wire"] == nil) then
+        global.oshared.items["red-wire"] = 100
+    end
+    if (global.oshared.items["green-wire"] == nil) then
+        global.oshared.items["green-wire"] = 100
+    end
+    if (global.oshared.items["raw-fish"] == nil) then
+        global.oshared.items["raw-fish"] = 50
+    end
+
+    if (global.oshared.energy_stored == nil) then
+        global.oshared.energy_stored = SHARED_ENERGY_STARTING_VALUE
+    end
+
+    global.oshared.energy_stored_history =
+    global.oshared.energy_stored_history or {}
+    if (global.oshared.energy_stored_history.start == nil) then
+        global.oshared.energy_stored_history.start = global.oshared.energy_stored
+    end
+    if (global.oshared.energy_stored_history.after_input == nil) then
+        global.oshared.energy_stored_history.after_input =
+        global.oshared.energy_stored
+    end
+    if (global.oshared.energy_stored_history.after_output == nil) then
+        global.oshared.energy_stored_history.after_output =
+        global.oshared.energy_stored
+    end
+end
+
+function SharedChestInitItems()
+    global.oshared = {}
+    EnsureSharedChestGlobals()
+    global.oshared.energy_stored = SHARED_ENERGY_STARTING_VALUE
+    global.oshared.energy_stored_history = {
+        start = SHARED_ENERGY_STARTING_VALUE,
+        after_input = SHARED_ENERGY_STARTING_VALUE,
+        after_output = SHARED_ENERGY_STARTING_VALUE
+    }
+end
+
+function SharedEnergySpawnInput(player, pos)
+    EnsureSharedChestGlobals()
+    
+    local inputElec = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = "electric-energy-interface",
+        position = pos,
+        force = "shared"
+    }
+    -- local new_tag = {
+    --     entity = inputElec,
+    --     offset = {x = 2, y = -1},
+    --     text = "->G",
+    --     color = {r=0, g=1, b=1, a=0.8}
+    -- }
+    -- flying_tag.create(new_tag)
+    inputElec.destructible = false
+    inputElec.minable = false
+    inputElec.operable = false
+    inputElec.last_user = player
+    
+    inputElec.electric_buffer_size = SHARED_ELEC_INPUT_BUFFER_SIZE
+    inputElec.power_production = 0
+    inputElec.power_usage = 0
+    inputElec.energy = 0
+    
+    local inputElecCombi = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = "constant-combinator",
+        position = {x = pos.x + 1, y = pos.y},
+        force = "shared"
+    }
+    inputElecCombi.destructible = false
+    inputElecCombi.minable = false
+    inputElecCombi.operable = true -- Input combi can be set by the player!
+    inputElecCombi.last_user = player
+    
+    -- Default share is 1MW
+    set_constant_combinator_signal(inputElecCombi, 1, {
+        signal = {type = "virtual", name = "signal-M"},
+        count = 1
+    })
+    
+    TemporaryHelperText(
+    "Connect to electric network to contribute shared energy.",
+    {pos.x + 1.5, pos.y - 1}, TICKS_PER_MINUTE * 2)
+    TemporaryHelperText("Use combinator to limit number of MW shared.",
+    {pos.x + 2.5, pos.y}, TICKS_PER_MINUTE * 2)
+    
+    table.insert(global.oshared.electricity_inputs,
+    {eei = inputElec, combi = inputElecCombi})
+end
+
+function SharedEnergySpawnOutput(player, pos)
+    EnsureSharedChestGlobals()
+    
+    local outputElec = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = "electric-energy-interface",
+        position = pos,
+        force = "shared"
+    }
+    -- local new_tag = {
+    --     entity = outputElec,
+    --     offset = {x = 2, y = -1},
+    --     text = "G->",
+    --     color = {r=0, g=1, b=1, a=0.8}
+    -- }
+    -- flying_tag.create(new_tag)
+    outputElec.destructible = false
+    outputElec.minable = false
+    outputElec.operable = false
+    outputElec.last_user = player
+    
+    outputElec.electric_buffer_size = SHARED_ELEC_OUTPUT_BUFFER_SIZE
+    outputElec.power_production = 0
+    outputElec.power_usage = 0
+    outputElec.energy = 0
+    
+    local outputElecCombi = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = "constant-combinator",
+        position = {x = pos.x + 1, y = pos.y},
+        force = "shared"
+    }
+    outputElecCombi.destructible = false
+    outputElecCombi.minable = false
+    outputElecCombi.operable = false -- Output combi is set my script!
+    outputElec.last_user = player
+    
+    TemporaryHelperText("Connect to electric network to consume shared energy.",
+    {pos.x + 1.5, pos.y - 1}, TICKS_PER_MINUTE * 2)
+    TemporaryHelperText("Combinator outputs number of MJ currently stored.",
+    {pos.x + 2.5, pos.y}, TICKS_PER_MINUTE * 2)
+    
+    table.insert(global.oshared.electricity_outputs,
+    {eei = outputElec, combi = outputElecCombi})
+end
+
+function SharedEnergyStoreInputOnTick()
+    EnsureSharedChestGlobals()
+    global.oshared.energy_stored_history.start = global.oshared.energy_stored
+    
+    for idx, input in pairs(global.oshared.electricity_inputs) do
+        
+        -- Check for entity no longer valid:
+        if (input.eei == nil) or (not input.eei.valid) or (input.combi == nil) or
+        (not input.combi.valid) then
+            global.oshared.electricity_inputs[idx] = nil
+            
+            -- Is input at least half full, then we can start to store energy.
+        elseif (input.eei.energy > (SHARED_ELEC_INPUT_BUFFER_SIZE / 2)) then
+            
+            -- Calculate the max we can share
+            local max_input_allowed = input.eei.energy -
+            (SHARED_ELEC_INPUT_BUFFER_SIZE / 2)
+            
+            -- Get the combinator limit
+            local limit = 0
+            local sig = get_constant_combinator_signal(input.combi, 1)
+            if ((sig ~= nil) and (sig.signal ~= nil) and
+            (sig.signal.name == "signal-M")) then
+                limit = sig.count
+            end
+            
+            -- Get the minimum
+            input.eei.power_usage = math.min(max_input_allowed,
+            math.floor(limit * 1000000 / 60))
+            
+            global.oshared.energy_stored =
+            global.oshared.energy_stored + input.eei.power_usage
+            
+            -- Switch off contribution if not at least half full.
+        else
+            input.eei.power_usage = 0
+        end
+    end
+    
+    global.oshared.energy_stored_history.after_input = global.oshared
+    .energy_stored
+end
+
+-- If there is room to distribute energy, we take shared amount split by players.
+function SharedEnergyDistributeOutputOnTick()
+    EnsureSharedChestGlobals()
+    
+    -- Share limit is total amount stored divided by outputs
+    local output_count = table_size(global.oshared.electricity_outputs)
+    if (output_count == 0) then
+        global.oshared.energy_stored_history.after_output =
+        global.oshared.energy_stored
+        return
+    end
+    local energyShareCap = math.floor(global.oshared.energy_stored /
+    output_count)
+    
+    -- Iterate through and fill up outputs if they are under 50%
+    for idx, output in pairs(global.oshared.electricity_outputs) do
+        
+        -- Check for entity no longer valid:
+        if (output.eei == nil) or (not output.eei.valid) or
+        (output.combi == nil) or (not output.combi.valid) then
+            global.oshared.electricity_outputs[idx] = nil
+            
+        else
+            -- If it's not full, set production to fill (or as much as is allowed.)
+            if (output.eei.energy < (SHARED_ELEC_OUTPUT_BUFFER_SIZE / 2)) then
+                local outBufferSpace = ((SHARED_ELEC_OUTPUT_BUFFER_SIZE / 2) -
+                output.eei.energy)
+                output.eei.power_production =
+                math.min(outBufferSpace, energyShareCap)
+                global.oshared.energy_stored =
+                global.oshared.energy_stored -
+                math.min(outBufferSpace, energyShareCap)
+                
+                -- Switch off if we're more than half full.
+            else
+                output.eei.power_production = 0
+            end
+            
+            -- Update output combinator
+            set_constant_combinator_signal(output.combi, 1, {
+                signal = {type = "virtual", name = "signal-M"},
+                count = clampInt32(math.floor(
+                global.oshared.energy_stored / 1000000))
+            })
+        end
+    end
+    
+    global.oshared.energy_stored_history.after_output = global.oshared
+    .energy_stored
+end
+
+function GetWoodenChestFromCursor(player)
+    local sel = player.selected
+    if not sel then
+        tools.error(player, "Can't find an empty wooden chest under the cursor. Resorting to searching for wooden chest nearest to player.")
+        return FindClosestWoodenChestAndDestroy(player)
+    end
+    if sel.name == "wooden-chest" then
+        if (not sel.get_inventory(defines.inventory.chest).is_empty()) then
+            tools.error(player, "Empty the chest first")
+            return nil
+        end
+        
+        local pos = sel.position
+        if (not sel.destroy()) then
+            tools.error(player, "Can't destroy wooden chest")
+            return nil
+        end
+        
+        return {x = math.floor(pos.x), y = math.floor(pos.y)}
+    else
+        tools.error(player, "This is not an empty wooden chest..")
+    end
+end
+
+
+-- Returns NIL or position of destroyed chest.
+function FindClosestWoodenChestAndDestroy(player)
+    local target_chest =
+    FindClosestPlayerOwnedEntity(player, "wooden-chest", 16)
+    if (not target_chest) then
+        tools.error(player, "Failed to find empty wooden chest")
+        return nil
+    end
+    
+    if (not target_chest.get_inventory(defines.inventory.chest).is_empty()) then
+        player.print("Chest is NOT empty! Please empty it and try again.")
+        return nil
+    end
+    
+    local pos = target_chest.position
+    if (not target_chest.destroy()) then
+        player.print("ERROR - Can't remove wooden chest??")
+        return nil
+    end
+    
+    return {x = math.floor(pos.x), y = math.floor(pos.y)}
+end
+
+function ConvertWoodenChestToSharedChestInput(player)
+    local pos = FindClosestWoodenChestAndDestroy(player)
+        if (pos) then
+            SharedChestsSpawnInput(player, pos)
+            -- oarcmapfeaturePlayerCountChange(player, "special_chests", "logistic-chest-storage", 1)
+        return true
+    end
+    return false
+end
+
+function ConvertWoodenChestToSharedChestOutput(player)
+    local pos = FindClosestWoodenChestAndDestroy(player)
+    if (pos) then
+        SharedChestsSpawnOutput(player, pos)
+        -- oarcmapfeaturePlayerCountChange(player, "special_chests", "logistic-chest-requester", 1)
+        return true
+    end
+    return false
+end
+
+function ConvertWoodenChestToSharedChestCombinators(player)
+    local pos = FindClosestWoodenChestAndDestroy(player)
+    if (pos) then
+        if (player.surface.can_place_entity {
+            name = "constant-combinator",
+            position = {pos.x, pos.y - 1}
+        }) and (player.surface.can_place_entity {
+            name = "constant-combinator",
+            position = {pos.x, pos.y + 1}
+        }) then
+            SharedChestsSpawnCombinators(player, {x = pos.x, y = pos.y - 1},
+            {x = pos.x, y = pos.y + 1})
+            return true
+        else
+            player.print(
+            "Failed to place the special combinators. Please check there is enough space in the surrounding tiles!")
+        end
+    end
+    return false
+end
+
+function ConvertWoodenChestToShareEnergyInput(player)
+    local pos = FindClosestWoodenChestAndDestroy(player)
+    if (pos) then
+        if (player.surface.can_place_entity {
+            name = "electric-energy-interface",
+            position = pos
+        }) and (player.surface.can_place_entity {
+            name = "constant-combinator",
+            position = {x = pos.x + 1, y = pos.y}
+        }) then
+            SharedEnergySpawnInput(player, pos)
+            -- oarcmapfeaturePlayerCountChange(player, "special_chests", "accumulator", 1)
+            return true
+        else
+            player.print(
+            "Failed to place the shared energy input. Please check there is enough space in the surrounding tiles!")
+        end
+    end
+    return false
+end
+
+function ConvertWoodenChestToShareEnergyOutput(player)
+    local pos = FindClosestWoodenChestAndDestroy(player)
+    if (pos) then
+        if (player.surface.can_place_entity {
+            name = "electric-energy-interface",
+            position = pos
+        }) and (player.surface.can_place_entity {
+            name = "constant-combinator",
+            position = {x = pos.x + 1, y = pos.y}
+        }) then
+            SharedEnergySpawnOutput(player, pos)
+            -- oarcmapfeaturePlayerCountChange(player, "special_chests", "electric-energy-interface", 1)
+            return true
+        else
+            player.print(
+            "Failed to place the shared energy input. Please check there is enough space in the surrounding tiles!")
+        end
+    end
+    return false
+end
+
+function ConvertWoodenChestToWaterFill(player)
+    local pos = FindClosestWoodenChestAndDestroy(player)
+    if (pos) then
+        if (getDistance(pos, player.position) > 2) then
+            player.surface.set_tiles({[1] = {name = "water", position = pos}})
+            return true
+        else
+            player.print("Failed to place waterfill. Don't stand so close FOOL!")
+        end
+    end
+    return false
+end
+
+function DestroyClosestSharedChestEntity(player)
+    local special_entities = game.surfaces[GAME_SURFACE_NAME]
+    .find_entities_filtered {
+        name = {
+            "electric-energy-interface", "constant-combinator",
+            SHARED_STORAGE_CHEST_NAME, SHARED_REQUESTER_CHEST_NAME
+        },
+        position = player.position,
+        radius = 16,
+        force = {"shared", "neutral"}
+    }
+    
+    if (#special_entities == 0) then
+        player.print("Special entity not found? Are you close enough?")
+        return
+    end
+    
+    local closest = game.surfaces[GAME_SURFACE_NAME].get_closest(
+    player.position, special_entities)
+    
+    if (closest) then
+        if (closest.last_user and (closest.last_user ~= player)) then
+            player.print("You can't remove other players chests!")
+        else
+            -- Subtract from feature counter...
+            local name = closest.name
+            if (name == "electric-energy-interface") then
+                if (closest.electric_buffer_size ==
+                SHARED_ELEC_INPUT_BUFFER_SIZE) then
+                    -- oarcmapfeaturePlayerCountChange(player, "special_chests", "accumulator", -1)
+                else
+                    -- oarcmapfeaturePlayerCountChange(player, "special_chests", "electric-energy-interface", -1)
+                end
+            elseif (name == SHARED_STORAGE_CHEST_NAME) then
+                -- oarcmapfeaturePlayerCountChange(player, "special_chests", "logistic-chest-storage", -1)
+            elseif (name == SHARED_REQUESTER_CHEST_NAME) then
+                -- oarcmapfeaturePlayerCountChange(player, "special_chests", "logistic-chest-requester", -1)
+            end
+            
+            closest.destroy()
+            player.print("Special entity removed!")
+            return true
+        end
+    else
+        player.print("Special entity not found? Are you close enough? -- ERROR")
+    end
+end
+
+function SharedChestsSpawnInput(player, pos)
+    EnsureSharedChestGlobals()
+    
+    local inputChest = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = SHARED_STORAGE_CHEST_NAME,
+        position = {pos.x, pos.y},
+        force = "shared"
+    }
+    -- local new_tag = {
+    --     entity = inputChest,
+    --     offset = {x = 1, y = -0.5},
+    --     text = "->G",
+    --     color = {r=0, g=1, b=1, a=0.8}
+    -- }
+    -- flying_tag.create(new_tag)
+    inputChest.destructible = false
+    inputChest.minable = false
+    inputChest.last_user = player
+    
+    if global.oshared.chests == nil then global.oshared.chests = {} end
+    
+    local chestInfoIn = {
+        player = player.name,
+        type = "INPUT",
+        entity = inputChest
+    }
+    table.insert(global.oshared.chests, chestInfoIn)
+    
+    TemporaryHelperText("Place items in to share.", {pos.x + 1.5, pos.y},
+    TICKS_PER_MINUTE * 2)
+end
+
+function SharedChestsSpawnOutput(player, pos, enable_example)
+    EnsureSharedChestGlobals()
+    
+    local outputChest = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = SHARED_REQUESTER_CHEST_NAME,
+        position = {pos.x, pos.y},
+        force = "shared",
+        request_filters = enable_example and {
+            {index = 1, name = "raw-fish", count = 1}
+        } or nil
+    }
+    -- local new_tag = {
+    --     entity = outputChest,
+    --     offset = {x = 1, y = -0.5},
+    --     text = "G->",
+    --     color = {r=0, g=1, b=1, a=0.8}
+    -- }
+    -- flying_tag.create(new_tag)
+    outputChest.destructible = false
+    outputChest.minable = false
+    outputChest.last_user = player
+    
+    if global.oshared.chests == nil then global.oshared.chests = {} end
+    
+    local chestInfoOut = {
+        player = player.name,
+        type = "OUTPUT",
+        entity = outputChest
+    }
+    table.insert(global.oshared.chests, chestInfoOut)
+    
+    TemporaryHelperText("Set filters to request items.", {pos.x + 1.5, pos.y},
+    TICKS_PER_MINUTE * 2)
+end
+
+function SharedChestsSpawnCombinators(player, posCtrl, posStatus)
+    EnsureSharedChestGlobals()
+    
+    local combiCtrl = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = "constant-combinator",
+        position = posCtrl,
+        force = "shared"
+    }
+    combiCtrl.destructible = false
+    combiCtrl.minable = false
+    combiCtrl.last_user = player
+    
+    -- Fish as an example.
+    set_constant_combinator_signal(combiCtrl, 1, {
+        signal = {type = "item", name = "raw-fish"},
+        count = 1
+    })
+    
+    local combiStat = game.surfaces[GAME_SURFACE_NAME].create_entity {
+        name = "constant-combinator",
+        position = posStatus,
+        force = "shared"
+    }
+    combiStat.destructible = false
+    combiStat.minable = false
+    combiStat.operable = false
+    combiStat.last_user = player
+    
+    if global.oshared.chests_combinators == nil then
+        global.oshared.chests_combinators = {}
+    end
+    
+    local combiPair = {
+        player = player.name,
+        ctrl = combiCtrl,
+        status = combiStat
+    }
+    table.insert(global.oshared.chests_combinators, combiPair)
+    
+    TemporaryHelperText("Set signals here to monitor item counts.",
+    {posCtrl.x + 1.5, posCtrl.y}, TICKS_PER_MINUTE * 2)
+    TemporaryHelperText("Receive signals here to see available items.",
+    {posStatus.x + 1.5, posStatus.y}, TICKS_PER_MINUTE * 2)
+end
+
+function SharedChestsUpdateCombinators()
+    EnsureSharedChestGlobals()
+    
+    if global.oshared.chests_combinators == nil then
+        global.oshared.chests_combinators = {}
+    end
+    
+    for idx, combiPair in pairs(global.oshared.chests_combinators) do
+        
+        -- Check if combinators still exist
+        if (combiPair.ctrl == nil) or (combiPair.status == nil) or
+        (not combiPair.ctrl.valid) or (not combiPair.status.valid) then
+            global.oshared.chests_combinators[idx] = nil
+        else
+            local ctrlSignals = {}
+            local ctrlSignalCount =
+            get_constant_combinator_signal_count(combiPair.ctrl)
+            local statusSignalCount =
+            get_constant_combinator_signal_count(combiPair.status)
+            local maxSignalCount = math.max(ctrlSignalCount, statusSignalCount)
+            
+            -- Get signals on the ctrl combi:
+            for i = 1, ctrlSignalCount do
+                local sig = get_constant_combinator_signal(combiPair.ctrl, i)
+                if ((sig ~= nil) and (sig.signal ~= nil) and
+                (sig.signal.type == "item")) then
+                    ctrlSignals[i] = sig.signal.name
+                end
+            end
+
+            -- Set signals on the status combi:
+            for i = 1, maxSignalCount do
+                if (ctrlSignals[i] ~= nil) then
+                    local availAmnt = global.oshared.items[ctrlSignals[i]]
+                    if availAmnt == nil then availAmnt = 0 end
+                    
+                    set_constant_combinator_signal(combiPair.status, i, {
+                        signal = {type = "item", name = ctrlSignals[i]},
+                        count = clampInt32(availAmnt)
+                    })
+                else
+                    set_constant_combinator_signal(combiPair.status, i, nil)
+                end
+            end
+        end
+    end
+end
+
+function SharedChestUploadItem(item_name, count)
+    EnsureSharedChestGlobals()
+    if (not prototypes.item[item_name].has_flag("hidden")) then
+        if (global.oshared.items[item_name] == nil) then
+            global.oshared.items[item_name] = count
+        else
+            global.oshared.items[item_name] =
+            global.oshared.items[item_name] + count
+        end
+        return true
+    else
+        return false
+    end
+end
+
+function SharedChestEmptyEquipment(item_stack)
+    if (item_stack == nil) then return end
+    
+    if (item_stack.grid == nil) then return end
+    
+    local contents = item_stack.grid.get_contents()
+    for item_name, count in pairs(contents) do
+        SharedChestUploadItem(item_name, count)
+    end
+end
+
+function SharedChestUploadChest(entity)
+    
+    local chest_inv = entity.get_inventory(defines.inventory.chest)
+    if (chest_inv == nil) then return end
+    if (chest_inv.is_empty()) then return end
+    
+    local contents = chest_inv.get_contents()
+    for item_name, count in pairs(contents) do
+        if (prototypes.item[item_name].equipment_grid ~= nil) then
+            local item_stack = chest_inv.find_item_stack(item_name)
+            while (item_stack ~= nil) do
+                SharedChestEmptyEquipment(item_stack)
+                item_stack.clear()
+                item_stack = chest_inv.find_item_stack(item_name)
+            end
+        end
+        
+        if (SharedChestUploadItem(item_name, count)) then
+            chest_inv.remove({name = item_name, count = count})
+        end
+    end
+end
+
+-- Pull all items in the deposit chests
+function SharedChestsDepositAll()
+    EnsureSharedChestGlobals()
+    
+    if global.oshared.items == nil then global.oshared.items = {} end
+    
+    for idx, chest_info in pairs(global.oshared.chests) do
+        
+        local chest_entity = chest_info.entity
+        
+        -- Delete any chest that is no longer valid.
+        if ((chest_entity == nil) or (not chest_entity.valid)) then
+            global.oshared.chests[idx] = nil
+            
+            -- Take inputs and store.
+        elseif (chest_info.type == "INPUT") then
+            SharedChestUploadChest(chest_entity)
+        end
+    end
+end
+
+-- Tally up requests by item.
+function SharedChestsTallyRequests()
+    EnsureSharedChestGlobals()
+    
+    -- Clear existing requests. Also serves as an init
+    global.oshared.requests = {}
+    global.oshared.requests_totals = {}
+    
+    -- For each output chest.
+    for idx, chestInfo in pairs(global.oshared.chests) do
+        
+        local chestEntity = chestInfo.entity
+        
+        -- Delete any chest that is no longer valid.
+        if ((chestEntity == nil) or (not chestEntity.valid)) then
+            global.oshared.chests[idx] = nil
+            
+        elseif (chestInfo.type == "OUTPUT") then
+            
+            -- For each request slot
+            for i = 1, get_requester_chest_slot_count(chestEntity), 1 do
+                local req = get_requester_chest_slot(chestEntity, i)
+                
+                -- If there is a request, add the request count to our request table.
+                if (req ~= nil) then
+                    
+                    if global.oshared.requests[req.name] == nil then
+                        global.oshared.requests[req.name] = {}
+                    end
+                    
+                    if global.oshared.requests[req.name][chestInfo.player] ==
+                    nil then
+                        global.oshared.requests[req.name][chestInfo.player] = 0
+                    end
+                    
+                    if global.oshared.requests_totals[req.name] == nil then
+                        global.oshared.requests_totals[req.name] = 0
+                    end
+                    
+                    -- Calculate actual request to fill remainder
+                    local existingAmount =
+                    chestEntity.get_inventory(defines.inventory.chest)
+                    .get_item_count(req.name)
+                    local requestAmount =
+                    math.max(req.count - existingAmount, 0)
+                    
+                    -- Add the request counts
+                    global.oshared.requests[req.name][chestInfo.player] =
+                    global.oshared.requests[req.name][chestInfo.player] +
+                    requestAmount
+                    global.oshared.requests_totals[req.name] = global.oshared
+                    .requests_totals[req.name] +
+                    requestAmount
+                end
+            end
+        end
+    end
+    
+    -- If demand is more than supply, limit each player's total item request to shared amount
+    for reqName, reqTally in pairs(global.oshared.requests) do
+        
+        local cap = 0
+        local mustCap = false
+        
+        -- No shared items means nothing to supply.
+        if (global.oshared.items[reqName] == nil) or
+        (global.oshared.items[reqName] == 0) then
+            mustCap = true
+            cap = 0
+            
+            -- Otherwise, limit by dividing by players.
+        elseif (global.oshared.requests_totals[reqName] >
+        global.oshared.items[reqName]) then
+            mustCap = true
+            cap = math.floor(global.oshared.items[reqName] /
+            table_size(global.oshared.requests[reqName]))
+            
+            -- In the case where we are rounding down to 0, let's bump the minimum distribution to 1.
+            if (cap == 0) then cap = 1 end
+        end
+        
+        -- Limit each request to the cap.
+        if mustCap then
+            for player, reqCount in pairs(global.oshared.requests[reqName]) do
+                if (reqCount > cap) then
+                    global.oshared.requests[reqName][player] = cap
+                end
+            end
+        end
+    end
+    
+end
+
+-- Distribute requests based on demand
+function SharedChestsDistributeRequests()
+    EnsureSharedChestGlobals()
+    
+    -- For each output chest.
+    for idx, chestInfo in pairs(global.oshared.chests) do
+        if (chestInfo.type == "OUTPUT") then
+            
+            local chestEntity = chestInfo.entity
+            
+            -- Delete any chest that is no longer valid.
+            if ((chestEntity == nil) or (not chestEntity.valid)) then
+                global.oshared.chests[idx] = nil
+                
+                -- For each request slot
+            else
+                for i = 1, get_requester_chest_slot_count(chestEntity), 1 do
+                    local req = get_requester_chest_slot(chestEntity, i)
+                    
+                    -- If there is a request, distribute items
+                    if (req ~= nil) then
+                        
+                        -- Make sure requests have been created.
+                        -- Make sure shared items exist.
+                        if (global.oshared.requests_totals[req.name] ~= nil) and
+                        (global.oshared.items[req.name] ~= nil) and
+                        (global.oshared.requests[req.name][chestInfo.player] ~=
+                        nil) then
+                            
+                            if (global.oshared.requests[req.name][chestInfo.player] >
+                            0) and (global.oshared.items[req.name] > 0) then
+                                
+                                -- How much is already in the chest?
+                                local existingAmount =
+                                chestEntity.get_inventory(defines.inventory
+                                .chest)
+                                .get_item_count(req.name)
+                                -- How much is required to fill the remainder request?
+                                local requestAmount =
+                                math.max(req.count - existingAmount, 0)
+                                -- How much is allowed based on the player's current request amount?
+                                local allowedAmount =
+                                math.min(requestAmount, global.oshared
+                                .requests[req.name][chestInfo.player])
+                                
+                                if (allowedAmount > 0) then
+                                    local chestInv =
+                                    chestEntity.get_inventory(
+                                    defines.inventory.chest)
+                                    if chestInv.can_insert({name = req.name}) then
+                                        
+                                        local amnt = chestInv.insert({
+                                            name = req.name,
+                                            count = math.min(allowedAmount,
+                                            global.oshared
+                                            .items[req.name])
+                                        })
+                                        global.oshared.items[req.name] =
+                                        global.oshared.items[req.name] -
+                                        amnt
+                                        global.oshared.requests[req.name][chestInfo.player] =
+                                        global.oshared.requests[req.name][chestInfo.player] -
+                                        amnt
+                                        global.oshared.requests_totals[req.name] =
+                                        global.oshared.requests_totals[req.name] -
+                                        amnt
+                                        
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function SharedPowerOnTick()
+    EnsureSharedChestGlobals()
+    -- Every tick we share power
+    SharedEnergyStoreInputOnTick()
+    SharedEnergyDistributeOutputOnTick()
+end
+
+function SharedChestsOnTick()
+    EnsureSharedChestGlobals()
+    -- if event.tick > 10 then     
+    --     SharedChestsDepositAll()
+    --     SharedChestsTallyRequests()
+    --     SharedChestsDistributeRequests()
+    --     SharedChestsUpdateCombinators()
+    SharedPowerOnTick()
+    -- Every second, we check the input chests and deposit stuff.
+    if ((game.tick % (60)) == 37) then SharedChestsDepositAll() end
+    
+    -- Every second, we check the output chests for requests
+    if ((game.tick % (60)) == 38) then SharedChestsTallyRequests() end
+    
+    -- Every second, we distribute to the output chests.
+    if ((game.tick % (60)) == 39) then SharedChestsDistributeRequests() end
+    
+    -- Every second, we update our combinator status info.
+    if ((game.tick % (60)) == 40) then SharedChestsUpdateCombinators() end
+    -- end
+end
+
+-- local ammo_table = {}
+-- table.insert(ammo_table, 'uranium-rounds-magazine')
+-- table.insert(ammo_table, 'piercing-rounds-magazine')
+-- table.insert(ammo_table, 'firearm-magazine')
+
+-- function CheckAmmo()
+--     local ammo_table = ammo_table
+--     -- check if custom inventory exists, if not then init
+--     if not AMMO_INVENTORY then AMMO_INVENTORY = game.create_inventory(30) end
+
+--     -- get table of ammos in custom inventory
+--     -- index the table
+--     local ammo_count = AMMO_INVENTORY.get_contents()
+
+--     local i_ammo_count = {}
+--     local i = 1
+--     for name, count in pairs(ammo_count) do
+--         i_ammo_count[i] = name
+--         i = i + 1
+--     end
+
+--     if (i_ammo_count[1] == nil) then
+--         for index, ammo_name in pairs(ammo_table) do
+--             if (global.oshared.items[ammo_name]) and
+--                 (global.oshared.items[ammo_name] > 0) then
+--                 global.oshared.items[ammo_name] =
+--                     global.oshared.items[ammo_name] -
+--                         (AMMO_INVENTORY.insert {name = ammo_name, count = 1})
+--             else
+--                 return
+--             end
+--         end
+--         ammo_count = AMMO_INVENTORY.get_contents()
+--     end
+
+--     for name, inv_count in pairs(ammo_count) do
+--         if global.oshared.items[name] and (inv_count < 2000) then
+--             local difference = 2000 - inv_count
+--             local insert_amount = global.oshared.items[name]
+
+--             if (insert_amount >= difference) then
+--                 insert_amount = difference
+--             end
+
+--             if (insert_amount > 0) then
+--                 global.oshared.items[name] =
+--                     global.oshared.items[name] -
+--                         (AMMO_INVENTORY.insert {
+--                             name = name,
+--                             count = insert_amount
+--                         })
+--             else
+--                 return
+--             end
+--         end
+--     end
+-- end
+
+-- function AutoFillOnTick()
+--     if ((game.tick % (60)) == 41) then
+--         local ret = 0
+--         CheckAmmo()
+--         for index, turret in pairs(global.oshared.turrets) do
+--                 if turret.valid then
+--                     CheckAmmo()
+--                     local turret_inv = turret.get_inventory(defines.inventory.turret_ammo)
+--                     if turret_inv[1].count < 10 then
+--                         ret = TransferItemMultipleTypes(AMMO_INVENTORY, turret,
+--                                                         {
+--                             "uranium-rounds-magazine",
+--                             "piercing-rounds-magazine", "firearm-magazine"
+--                         }, 1)
+--                     end
+--                 else
+--                     table.remove(
+--                         global.oshared.turrets[global.oshared.iturrets[turret]])
+--                     return
+--                 end
+--             until ret > 0 or
+--                 turret.get_inventory(defines.inventory.turret_ammo)[1].count >=
+--                 10
+--             local ammo_name =
+--                 turret.get_inventory(defines.inventory.turret_ammo)[1].name
+--             FlyingText("+ [item=" .. ammo_name .. "]", turret.position,
+--                        {0, 1, 0}, turret.surface)
+--         end
+--   end
+-- end
+
+function CreateSharedItemsGuiTab(tab_container, player)
+    local scrollFrame = tab_container.add {
+        type = "scroll-pane",
+        name = "sharedItems-panel",
+        direction = "vertical"
+    }
+    ApplyStyle(scrollFrame, my_shared_item_list_fixed_width_style)
+    scrollFrame.horizontal_scroll_policy = "never"
+    
+    AddLabel(scrollFrame, "share_items_info",
+    "Place items into the [color=yellow]yellow storage chests to share[/color].\nRequest items from the [color=blue]blue requestor chests to pull out items[/color].\nTo refresh this view, click the tab again.\nShared items are accessible by [color=red]EVERYONE and all teams[/color].\nThe combinator pair allows you to 'set' item types to watch for. Set items in the top one, and connect the bottom one to a circuit network to view the current available inventory. Items with 0 amount do not generate any signal.\nThe special accumulators share energy. The top one acts as an input, the bottom is the output.",
+        my_longer_label_style)
+        
+        AddSpacerLine(scrollFrame)
+        
+        -- MW charging/discharging rate. (delta change * sample rate per second)
+        local energy_change_add =
+        (global.oshared.energy_stored_history.after_input -
+        global.oshared.energy_stored_history.start) * 60 / 1000000
+        local energy_change_sub = (((global.oshared.energy_stored_history
+        .after_input -
+        global.oshared.energy_stored_history
+        .after_output) * 60)) / 1000000
+        local energy_add_str = string.format("+%.3fMW", energy_change_add)
+        local energy_sub_str = string.format("-%.3fMW", energy_change_sub)
+        local rate_color = "green"
+        if (energy_change_add <= energy_change_sub) then
+            rate_color = "red"
+        elseif (energy_change_add < (energy_change_sub + 10)) then
+            rate_color = "orange"
+        end
+        
+        AddLabel(scrollFrame, "elec_avail_info",
+        "[color=acid]Current electricity available: " ..
+        string.format("%.3f", global.oshared.energy_stored / 1000000) ..
+        "MJ[/color] [color=" .. rate_color .. "](" .. energy_add_str ..
+        " " .. energy_sub_str .. ")[/color]", my_longer_label_style)
+        
+        AddSpacerLine(scrollFrame)
+        AddLabel(scrollFrame, "share_items_title_msg", "Shared Items:",
+        my_label_header_style)
+        
+        local sorted_items = {}
+        for k in pairs(global.oshared.items) do table.insert(sorted_items, k) end
+        table.sort(sorted_items)
+        
+        for idx, itemName in pairs(sorted_items) do
+            if (global.oshared.items[itemName] > 0) then
+                local caption_str =
+                "[item=" .. itemName .. "] " .. itemName .. ": " ..
+                global.oshared.items[itemName]
+                AddLabel(scrollFrame, itemName .. "_itemlist", caption_str,
+                my_player_list_style)
+            end
+        end
+        
+    end
+    

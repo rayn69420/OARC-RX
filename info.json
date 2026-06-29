@@ -1,0 +1,12 @@
+{
+  "name": "OARC_hidden_relic",
+  "version": "2.0.0",
+  "title": "OARC Hidden Relic",
+  "author": "hidden_relic, oof2win2",
+  "homepage": "https://github.com/hidden-relic/OARC_hidden_relic",
+  "description": "Separated-spawn OARC gameplay and server automation customized for hidden_relic.",
+  "factorio_version": "2.0",
+  "dependencies": [
+    "base >= 2.0.0"
+  ]
+}
