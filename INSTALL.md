@@ -9,6 +9,12 @@
 4. Start Factorio and enable `oarc-rx` in the Mods menu.
 5. Restart the game if Factorio asks for it.
 
+## Install From The Factorio Mod Portal
+
+1. Open the [OARC-RX Mod Portal page](https://mods.factorio.com/mod/oarc-rx).
+2. Download or subscribe through your usual Factorio/portal flow.
+3. Make sure `oarc-rx` is enabled in the Mods menu.
+
 ## Steam Version Notes
 
 The Steam edition uses the same writable mods folder:

@@ -11,3 +11,6 @@ Thanks to `hidden_relic` and `oof2win2` for the original version that inspired a
 Installation instructions are in [INSTALL.md](INSTALL.md).
 Releases are published here:
 [https://github.com/rayn69420/oarc-rx/releases](https://github.com/rayn69420/oarc-rx/releases)
+
+The live Factorio Mod Portal page is here:
+[https://mods.factorio.com/mod/oarc-rx](https://mods.factorio.com/mod/oarc-rx)

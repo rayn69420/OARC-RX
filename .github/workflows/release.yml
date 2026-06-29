@@ -43,47 +43,7 @@ jobs:
 
       - name: Build mod zip
         shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          import shutil
-          import zipfile
-          from pathlib import Path
-
-          root = Path(".").resolve()
-          info = json.loads((root / "info.json").read_text(encoding="utf-8"))
-          mod_name = info["name"]
-          version = info["version"]
-          folder_name = f"{mod_name}_{version}"
-          build_dir = root / "build"
-          stage_dir = build_dir / folder_name
-          zip_path = build_dir / f"{folder_name}.zip"
-          excludes = {".git", ".github", ".vscode", "build", "__pycache__"}
-
-          if build_dir.exists():
-              shutil.rmtree(build_dir)
-
-          stage_dir.mkdir(parents=True, exist_ok=True)
-
-          for item in root.iterdir():
-              if item.name in excludes:
-                  continue
-              destination = stage_dir / item.name
-              if item.is_dir():
-                  shutil.copytree(
-                      item,
-                      destination,
-                      ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
-                  )
-              else:
-                  shutil.copy2(item, destination)
-
-          with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-              for path in stage_dir.rglob("*"):
-                  archive.write(path, path.relative_to(build_dir))
-
-          print(f"Built {zip_path}")
-          PY
+        run: python devtools/build_mod_zip.py --no-copy
 
       - name: Move rolling release tag
         shell: bash
