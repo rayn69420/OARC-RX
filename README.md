@@ -1,4 +1,4 @@
-# oarc-rx
+# OARC-RX
 
 `oarc-rx` is Rayn's maintained Factorio 2.x version of OARC-RX.
 
