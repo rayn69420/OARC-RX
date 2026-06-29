@@ -1,10 +1,10 @@
 {
-  "name": "OARC_hidden_relic",
+  "name": "oarc-rx",
   "version": "2.0.0",
-  "title": "OARC Hidden Relic",
-  "author": "hidden_relic, oof2win2",
-  "homepage": "https://github.com/hidden-relic/OARC_hidden_relic",
-  "description": "Separated-spawn OARC gameplay and server automation customized for hidden_relic.",
+  "title": "AWF OARC RX",
+  "author": "rayn69420",
+  "homepage": "https://github.com/rayn69420/oarc-rx",
+  "description": "Rayn's maintained Factorio 2.x continuation of the classic AWF OARC server scenario. Built because the old server was great and it would be a shame not to keep it alive. Thanks to hidden_relic and oof2win2 for the original version.",
   "factorio_version": "2.0",
   "dependencies": [
     "base >= 2.0.0"

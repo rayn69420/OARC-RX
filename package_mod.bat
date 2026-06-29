@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 
-set "MOD_NAME=OARC_hidden_relic"
+set "MOD_NAME=oarc-rx"
 set "MOD_VERSION=2.0.0"
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"

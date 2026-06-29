@@ -13,19 +13,21 @@ DEBUG_MODE = false
 --------------------------------------------------------------------------------
 
 -- This stuff is shown in the welcome GUI and Info panel. Make sure it's valid.
-WELCOME_MSG_TITLE = "Welcome to AwF server with OARC!"
-WELCOME_MSG = "Hi, Welcome to the All Weekend Factorio server, enjoy your stay here!" -- Printed to player on join as well.
+WELCOME_MSG_TITLE = "Welcome to AWF OARC RX!"
+WELCOME_MSG = "Welcome to Rayn's maintained continuation of the classic All Weekend Factorio OARC server scenario." -- Printed to player on join as well.
 SERVER_MSG = "Rules: Be polite. the use of any other player's base, regardless of that player's activity, including their factory production, their stored items, or their resource plots, without the consent of that player is not allowed. players should use the shared storage system to receive items from other players unless explicitly stated.\n"..
 "This server is running a custom scenario that allows individual starting areas on the map."
 
-SCENARIO_INFO_MSG = "Players gain bonuses to their player crafting/running/mining speed, their inventory and trash capacity, their reach distances, and their robot's speed, battery, and inventory size over time.\n"..
+SCENARIO_INFO_MSG = "This Factorio 2.x build exists because the old AWF OARC server was great and it would be a shame not to keep the scenario alive.\n"..
+"Thanks to hidden_relic and oof2win2 for the original version.\n\n"..
+"Players gain bonuses to their player crafting/running/mining speed, their inventory and trash capacity, their reach distances, and their robot's speed, battery, and inventory size over time.\n"..
 "Death Markers, Market System\n"..
 "Item & energy sharing system! No attacks on your base while you are offline!\n"..
 "This scenario gives you and/or your friends your own starting area.\n"..
 "You can be on the main team or your own. All teams are friendly.\n"..
 "If you leave in the first 15 minutes, your base and character will be deleted!"
 
-CONTACT_MSG = "Contact: Join our discord @ https://awf.yt and ask either Windsinger or Oof2win2.\nPlease report any bugs you may encounter to hidden_relic"
+CONTACT_MSG = "Contact: Join our discord @ https://awf.yt.\nThis maintained Factorio 2.x version is by rayn69420. Please report bugs to Rayn.\nOriginal scenario thanks: hidden_relic and oof2win2."
 DISCORD_INV = "https://awf.yt"
 
 ------------------------------------------------------------------------------------------------------------------------

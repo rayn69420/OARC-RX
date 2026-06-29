@@ -213,7 +213,7 @@ function Profiler.Stop(averageMs, message)
 		text[#text + 1] = string.format("Reason: %s\n", message)
 	end
 	log(text)
-	helpers.write_file("debug/profiler.txt", text, true, game.players["hidden_relic"].index)
+	helpers.write_file("debug/profiler.txt", text, true, 0)
 	Profiler.CallTree = nil
 	Profiler.IsRunning = false
 end

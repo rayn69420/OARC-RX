@@ -1,6 +1,9 @@
 Version: 2.0.0
 Date: 2026-06-29
   Changes:
+    - Renamed the maintained fork to AWF OARC RX / oarc-rx.
+    - Updated the mod metadata and welcome text to present this as Rayn's continuation of the AWF OARC scenario.
+    - Kept thanks and attribution to hidden_relic and oof2win2 in the in-mod messaging.
     - Rebuilt info.json so the mod loads as a valid Factorio 2.0 mod.
     - Declared Factorio 2.0 compatibility and base dependency metadata.
     - Ported core scenario/mod scripts for Factorio 2.0 API changes.
