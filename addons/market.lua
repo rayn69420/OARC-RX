@@ -1,5 +1,7 @@
 local gui = require("mod-gui")
 local tools = require("addons.tools")
+local market_data = require("addons.market_data")
+local market_wallet = require("addons.market_wallet")
 local prodscore = require('production-score')
 
 local group = require("addons.groups")
@@ -75,130 +77,24 @@ local PERSISTENT_MARKET_FIELDS = {
     shared = true
 }
 
-local config = {}
-config.locked_tech_multiplier = 5
-config.sell_fraction = 0.5
-config.enable_groups = false
-config.enable_shared_purchasing = false
-config.upgrades_column_count = 3
-config.shared_column_count = 3
-config.special_column_count = 3
-if config.enable_groups then
-    config.upgrades_column_count = 5
-    config.followers_column_count = 4
-    config.shared_column_count = 6
-    config.special_column_count = 6
-end
-config.disabled_items =
-{
-    ['space-science-pack'] = true
-}
-
-local function is_valid_market_value(value)
-    return type(value) == "number" and value == value and value > 0 and
-        value < math.huge and value > -math.huge
-end
-
-local function sanitize_market_value(item_name, value)
-    if not is_valid_market_value(value) then
-        log("Skipping invalid market value for " .. tostring(item_name) ..
-            ": " .. tostring(value))
-        return nil
-    end
-    return value
-end
-
-local function round_coin_value(value)
-    if not is_valid_market_value(value) then return nil end
-    return math.max(1, math.floor(value + 0.5))
-end
+local config = market_data.config
+local sanitize_market_value = market_wallet.sanitize_value
+local round_coin_value = market_wallet.round_coin_value
+local parse_coin_amount = market_wallet.parse_coin_amount
+local add_history_entry = market_wallet.add_history_entry
+local spend_balance = market_wallet.spend_balance
+local record_purchase = market_wallet.record_purchase
 
 local function get_market_item_price(player, item_name)
     ensure_market_globals()
-    local value = sanitize_market_value(item_name,
-        global.markets.item_values[item_name])
-    if not value then return nil end
-
-    local recipe = player.force.recipes[item_name]
-    if recipe and recipe.enabled ~= nil and not recipe.enabled then
-        value = value * config.locked_tech_multiplier
-    end
-
-    local item = prototypes.item[item_name]
-    if item and item.type == "tool" then value = value * 3 end
-
-    return round_coin_value(sanitize_market_value(item_name, value))
+    return market_wallet.get_item_price(player, item_name,
+        global.markets.item_values, config.locked_tech_multiplier)
 end
 
-local function parse_coin_amount(text)
-    if type(text) ~= "string" then return nil end
-
-    local normalized = string.gsub(text, "[,%s]", "")
-    local amount = tonumber(normalized)
-    if type(amount) ~= "number" or amount ~= amount or amount < 1 then
-        return nil
-    end
-
-    return math.floor(amount)
-end
-
-local function add_history_entry(market, prefix, suffix)
-    table.insert(market.stats.history, 1, {
-        prefix = prefix,
-        suffix = suffix
-    })
-
-    if #market.stats.history > 16 then
-        table.remove(market.stats.history)
-    end
-end
-
-local function spend_balance(market, amount)
-    local current_balance = market.balance or 0
-    if amount > current_balance then
-        return false
-    end
-
-    market.balance = current_balance - amount
-    market.stats.total_coin_spent = tools.round(
-        (market.stats.total_coin_spent or 0) + amount)
-    return true
-end
-
-local function record_purchase(market, item_name, count, total_cost)
-    if count <= 0 or total_cost <= 0 then return end
-
-    if not market.stats.items_purchased[item_name] then
-        market.stats.items_purchased[item_name] = {
-            count = count,
-            value = total_cost
-        }
-    else
-        market.stats.items_purchased[item_name].count =
-        market.stats.items_purchased[item_name].count + count
-        market.stats.items_purchased[item_name].value =
-        market.stats.items_purchased[item_name].value + total_cost
-    end
-
-    local history = market.stats.history
-    if #history > 0 and history[1].item == item_name and history[1].purchased then
-        history[1].purchased = history[1].purchased + count
-        history[1].spent = (history[1].spent or 0) + total_cost
-        history[1].prefix = "[img=item/" .. item_name .. "] [color=green]+" ..
-        tools.add_commas(history[1].purchased) .. "[/color]"
-        history[1].suffix = "[img=item/coin][color=red]-" ..
-        tools.add_commas(history[1].spent) .. "[/color]"
-        return
-    end
-
-    add_history_entry(market,
-        "[img=item/" .. item_name .. "] [color=green]+" ..
-        tools.add_commas(count) .. "[/color]",
-        "[img=item/coin][color=red]-" ..
-        tools.add_commas(total_cost) .. "[/color]")
-    history[1].item = item_name
-    history[1].purchased = count
-    history[1].spent = total_cost
+local function get_market_sell_value(item_name)
+    ensure_market_globals()
+    return market_wallet.get_sell_value(item_name, global.markets.item_values,
+        config.sell_fraction)
 end
 
 local function get_requester_point_filters(chest)
@@ -1086,18 +982,9 @@ ensure_market_globals = function()
 end
 --
 
+M.followers_table = market_data.followers_table
+
 if config.enable_groups == true then
-    M.followers_table = {
-        ["small-biter"] = {cost = 500, count = 1},
-        ["medium-biter"] = {cost = 2000, count = 1},
-        ["big-biter"] = {cost = 10000, count = 1},
-        ["behemoth-biter"] = {cost = 60000, count = 1},
-        ["small-spitter"] = {cost = 500, count = 1},
-        ["medium-spitter"] = {cost = 3000, count = 1},
-        ["big-spitter"] = {cost = 12000, count = 1},
-        ["behemoth-spitter"] = {cost = 75000, count = 1}
-    }
-    
     M.followers_func_table = {
         ["small-biter"] = function(player) group.add(player, "small-biter") return end,
         ["medium-biter"] = function(player) group.add(player, "medium-biter") return end,
@@ -1130,15 +1017,9 @@ if config.enable_shared_purchasing == true then
         ["special_deconstruction-planner"] = function(player) return DestroyClosestSharedChestEntity(player) end
     }
     
-    M.shared_cost_table = {
-        ["special_logistic-chest-storage"] = 1.02,
-        ["special_logistic-chest-requester"] = 1.02,
-        ["special_constant-combinator"] = 1.02,
-        ["special_accumulator"] = 1.02,
-        ["special_electric-energy-interface"] = 1.02,
-        ["special_deconstruction-planner"] = 1.02
-    }
 end
+
+M.shared_cost_table = market_data.shared_cost_table
 
 M.special_func_table = {
     ["special_electric-furnace"] = function(player) return RequestSpawnSpecialChunk(player, SpawnFurnaceChunk, "electric-furnace") end,
@@ -1157,25 +1038,8 @@ M.special_func_table = {
     end
 }
 
-M.special_cost_table = {
-    ["special_electric-furnace"] = 1.1,
-    ["special_oil-refinery"] = 1.1,
-    ["special_assembling-machine-3"] = 1.1,
-    ["special_centrifuge"] = 1.1,
-    ["special_assembling-machine-1"] = 1.1,
-    ["special_requester-chest"] = 1.0,
-    ["special_offshore-pump"] = 1.1
-}
-
-M.special_table = {
-    ["special_electric-furnace"] = {cost = 100000, tooltip = "Turn a magic square into a Magic Furnace"},
-    ["special_oil-refinery"] = {cost = 100000, tooltip = "Turn a magic square into a Magic Refinery"},
-    ["special_assembling-machine-3"] = {cost = 100000, tooltip = "Turn a magic square into a Magic Assembler"},
-    ["special_centrifuge"] = {cost = 100000, tooltip = "Turn a magic square into a Magic Centrifuge"},
-    ["special_assembling-machine-1"] = {cost = 10, tooltip = "Instantly teleport to your spawn"},
-    ["special_requester-chest"] = {cost = BUY_CHEST_COST, tooltip = "Turn the nearest empty wooden chest into an auto-buy requester chest"},
-    ["special_offshore-pump"] = {cost = 1000, tooltip = "Turn the nearest empty wooden chest into a water tile"}
-}
+M.special_cost_table = market_data.special_cost_table
+M.special_table = market_data.create_special_table(BUY_CHEST_COST)
 
 local function ensure_market_special_buttons(market)
     if not (market and market.special_table and market.special_table.valid) then
@@ -1201,20 +1065,7 @@ local function ensure_market_special_buttons(market)
     end
 end
 
-M.upgrade_cost_table = {
-    ["sell-speed"] = 1.12,
-    ["character-health"] = 0.5,
-    ["gun"] = 0.2,
-    ["tank-flame"] = 0.2,
-    ["rocketry"] = 0.2,
-    ["laser"] = 0.2,
-    ["mining-drill-productivity-bonus"] = 0.35,
-    ["maximum-following-robot-count"] = 0.2,
-    ["group-limit"] = 0.25,
-    -- ["autofill-turret"] = 0,
-    ["autolvl-turret"] = 0,
-    -- ["coin-turret"] = 0,
-}
+M.upgrade_cost_table = market_data.upgrade_cost_table
 
 M.upgrade_func_table = {
     ["sell-speed"] = function(player) return end,
@@ -1334,156 +1185,14 @@ function M.new(player)
     local player = player
     ensure_market_globals()
     ensure_market_snapshot_globals()
-    global.markets[player.name] =
-    {
-        balance = 0,
-        stats =
-        {
-            total_coin_earned = 0,
-            total_coin_spent = 0,
-            items_purchased = {},
-            item_most_purchased_total = "",
-            item_most_purchased_coin = "",
-            items_sold = {},
-            item_most_sold_total = "",
-            item_most_sold_coin = "",
-            history = {},
-            waterfill_cost = 1000
-        }
-    }
+    global.markets[player.name] = market_data.create_default_market_state()
     local market = get_market_view_by_name(player.name)
-    market.upgrades =
-    {
-        ["sell-speed"] =
-        {
-            name = "Sell Speed",
-            lvl = 1,
-            max_lvl = 26,
-            cost = 10000,
-            sprite = "utility/character_running_speed_modifier_constant",
-            -- potential future speeds for ups optimization
-            -- 1-10 (10)
-            -- 1-9 (9)
-            -- 1-8 (8)
-            -- 1-7 (7)
-            -- 1-6 (6)
-            -- 2-8 (4)
-            -- 2-7 (3.5)
-            -- 2-6 (3)
-            -- 2-5 (2.5)
-            -- 3-6 (2)
-            -- 3-5 (1.66)
-            -- 3-4 (1.25)
-            -- 4-4 (1)
-            -- 4-3 (0.75)
-            -- 4-2 (0.5)
-            -- 5-2 (0.4)
-            -- 5-1 (0.2)
-            t = {},
-            tooltip = "Increase the amount of items you sell every 10 seconds\nnumber of items = level^1.1"
-        },
-        ["character-health"] = {
-            name = "Character Health",
-            lvl = 1,
-            max_lvl = 26,
-            cost = 1000,
-            sprite = "utility/rail_planner_indication_arrow",
-            t = {},
-            tooltip = "+25 to character health"
-        },
-        ["gun"] = {
-            name = "Weaponry",
-            lvl = 1,
-            max_lvl = 51,
-            cost = 10000,
-            sprite = "item/submachine-gun",
-            hovered_sprite = "item/gun-turret",
-            t = {},
-            tooltip = "+4% Bullet Damage\n+4% Gun Turret Attack\n +4% Bullet Speed\n[img=item/firearm-magazine] [img=item/piercing-rounds-magazine] [img=item/uranium-rounds-magazine] [img=item/gun-turret]"
-        },
-        ["tank-flame"] = {
-            name = "Hot & Heavy",
-            lvl = 1,
-            max_lvl = 51,
-            cost = 10000,
-            sprite = "item/flamethrower",
-            hovered_sprite = "item/tank",
-            t = {},
-            tooltip = "+4% Tank Shell Damage\n+4%Tank Shell Speed\n+4% Flamethrower Damage\n+4% Flamethrower Turret Attack\n [img=item/flamethrower-ammo] [img=item/flamethrower-turret] [img=item/cannon-shell]"
-        },
-        ["rocketry"] = {
-            name = "Rocketry",
-            lvl = 1,
-            max_lvl = 51,
-            cost = 10000,
-            sprite = "item/rocket",
-            hovered_sprite = "item/explosive-rocket",
-            t = {},
-            tooltip = "+4% Rocket Damage\n+4% Rocket Speed\n[img=item/rocket] [img=item/explosive-rocket]"
-        },
-        ["laser"] = {
-            name = "Lasers",
-            lvl = 1,
-            max_lvl = 51,
-            cost = 10000,
-            sprite = "item/laser-turret",
-            hovered_sprite = "item/personal-laser-defense-equipment",
-            t = {},
-            tooltip = "+4% Laser Damage\n+4% Laser Speed\n+4% Laser Turret Attack\n+4% Electric+Beam Attack\n[img=item/laser-turret] [img=item/personal-laser-defense-equipment] [img=entity/destroyer] [img=entity/distractor] [img=item/discharge-defense-equipment]"
-        },
-        ["autolvl-turret"] =
-        {
-            name = "Gun Turret Combat Training",
-            lvl = 0,
-            max_lvl = 1,
-            cost = 1000000,
-            sprite = "item/gun-turret",
-            hovered_sprite = "utility/turret_attack_modifier_constant",
-            t = {},
-            tooltip = "Enable Combat Training on your gun turrets.\nThe more damage they deal, the more damage they do.\nAffects entire team"
-                
-            },
-            ["mining-drill-productivity-bonus"] = {
-                name = "Mining Drill Productivity",
-                lvl = 1,
-                max_lvl = 26,
-                cost = 1000000,
-                sprite = "technology/mining-productivity-1",
-                t = {{type = "mining-drill-productivity-bonus", modifier = 0.05}},
-                tooltip = "+5% Productivity [img=technology/mining-productivity-1]"
-            },
-            
-            
-            ["maximum-following-robot-count"] = {
-                name = "Follower Robot Count",
-                lvl = 1,
-                max_lvl = 26,
-                cost = 10000,
-                sprite = "technology/follower-robot-count-1",
-                t = {{type = "maximum-following-robots-count", modifier = 5}},
-                tooltip = "+5 Robots [img=entity/distractor] [img=entity/destroyer] [img=entity/defender]"
-            },
-        }
+    market.upgrades = market_data.create_default_upgrades()
         if config.enable_shared_purchasing == true then
-            market.shared = {
-                ["special_logistic-chest-storage"] = {cost = 20000, tooltip = "Turn the nearest empty wooden chest into a shared INPUT chest"},
-                ["special_logistic-chest-requester"] = {cost = 20000, tooltip = "Turn the nearest empty wooden chest into a shared OUTPUT chest"},
-                ["special_constant-combinator"] = {cost = 20000, tooltip = "Turn the nearest empty wooden chest into a pair of combinators that are tied to the shared storage"},
-                ["special_accumulator"] = {cost = 20000, tooltip = "Turn the nearest empty wooden chest into a shared INPUT accumulator"},
-                ["special_electric-energy-interface"] = {cost = 20000, tooltip = "Turn the nearest empty wooden chest into a shared OUTPUT accumulator"},
-                ["special_deconstruction-planner"] = {cost = 0, tooltip = "Deconstruct a nearby shared entity"}
-            }
+            market.shared = market_data.create_shared_entries()
         end
         if config.enable_groups == true then
-            market.upgrades["group-limit"] = {
-                name = "Pet Limit",
-                lvl = 1,
-                max_lvl = 50,
-                cost = 10000,
-                sprite = "entity/small-biter",
-                t = {},
-                tooltip = "+1 Pet [img=entity/small-biter] [img=entity/medium-biter] [img=entity/big-biter] [img=entity/behemoth-biter]"
-            }
+            market.upgrades["group-limit"] = market_data.create_group_limit_upgrade()
         end
 
         local restore_source = restore_market_snapshot(player.name, market)
@@ -1799,10 +1508,7 @@ function M.new(player)
         local player = player
         local market = get_market_view_by_name(player.name)
         local item_name = type(item) == "table" and item.name or item
-        local base_value = sanitize_market_value(item_name,
-            global.markets.item_values[item_name])
-        if not base_value then return end
-        local total_value = round_coin_value(base_value * config.sell_fraction)
+        local total_value, base_value = get_market_sell_value(item_name)
         if not total_value then return end
         local player_value = total_value
         market_debug_log(player, "sell_trace",

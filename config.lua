@@ -13,12 +13,13 @@ DEBUG_MODE = false
 --------------------------------------------------------------------------------
 
 -- This stuff is shown in the welcome GUI and Info panel. Make sure it's valid.
-WELCOME_MSG_TITLE = "Welcome to AWF OARC RX!"
-WELCOME_MSG = "Welcome to Rayn's maintained continuation of the classic All Weekend Factorio OARC server scenario." -- Printed to player on join as well.
+WELCOME_MSG_TITLE = "Welcome to OARC-RX!"
+WELCOME_MSG = "Welcome to OARC-RX, Rayn's maintained Factorio 2.x continuation of this OARC scenario." -- Printed to player on join as well.
 SERVER_MSG = "Rules: Be polite. the use of any other player's base, regardless of that player's activity, including their factory production, their stored items, or their resource plots, without the consent of that player is not allowed. players should use the shared storage system to receive items from other players unless explicitly stated.\n"..
 "This server is running a custom scenario that allows individual starting areas on the map."
 
-SCENARIO_INFO_MSG = "This Factorio 2.x build exists because the old AWF OARC server was great and it would be a shame not to keep the scenario alive.\n"..
+SCENARIO_INFO_MSG = "This Factorio 2.x build exists to keep OARC-RX alive on modern Factorio.\n"..
+"Project page, updates, and bug reports: https://github.com/rayn69420/oarc-rx\n"..
 "Thanks to hidden_relic and oof2win2 for the original version.\n\n"..
 "Players gain bonuses to their player crafting/running/mining speed, their inventory and trash capacity, their reach distances, and their robot's speed, battery, and inventory size over time.\n"..
 "Death Markers, Market System\n"..
@@ -27,8 +28,8 @@ SCENARIO_INFO_MSG = "This Factorio 2.x build exists because the old AWF OARC ser
 "You can be on the main team or your own. All teams are friendly.\n"..
 "If you leave in the first 15 minutes, your base and character will be deleted!"
 
-CONTACT_MSG = "Contact: Join our discord @ https://awf.yt.\nThis maintained Factorio 2.x version is by rayn69420. Please report bugs to Rayn.\nOriginal scenario thanks: hidden_relic and oof2win2."
-DISCORD_INV = "https://awf.yt"
+CONTACT_MSG = "Project page, updates, and bug reports: https://github.com/rayn69420/oarc-rx\nThis maintained Factorio 2.x version is by rayn69420.\nOriginal scenario thanks: hidden_relic and oof2win2."
+PROJECT_URL = "https://github.com/rayn69420/oarc-rx"
 
 ------------------------------------------------------------------------------------------------------------------------
 -- Module Enables
@@ -471,7 +472,7 @@ ENABLE_FRIENDLY_FIRE = false
 -- editing lua code.
 ------------------------------------------------------------------------------------------------------------------------
 
--- This turns on writing chat and certain events to specific files so that I can use that for discord integration. I
+-- This turns on writing chat and certain events to specific files so that I can use that for external integrations. I
 -- suggest you leave this off unless you know what you are doing.
 ENABLE_SERVER_WRITE_FILES = false
 

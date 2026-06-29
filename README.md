@@ -1,7 +1,13 @@
 # oarc-rx
 
-`oarc-rx` is Rayn's maintained Factorio 2.x continuation of the classic AWF OARC server scenario.
+`oarc-rx` is Rayn's maintained Factorio 2.x version of OARC-RX.
 
-This project exists because the old AWF OARC server was great, and it would be a shame not to keep the scenario alive on modern Factorio versions.
+This project exists to keep OARC-RX alive on modern Factorio versions.
 
 Thanks to `hidden_relic` and `oof2win2` for the original version that inspired and powered those server memories.
+
+## Install
+
+Installation instructions are in [INSTALL.md](INSTALL.md).
+Releases are published here:
+[https://github.com/rayn69420/oarc-rx/releases](https://github.com/rayn69420/oarc-rx/releases)

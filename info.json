@@ -1,10 +1,10 @@
 {
   "name": "oarc-rx",
   "version": "2.0.0",
-  "title": "AWF OARC RX",
+  "title": "OARC-RX",
   "author": "rayn69420",
   "homepage": "https://github.com/rayn69420/oarc-rx",
-  "description": "Rayn's maintained Factorio 2.x continuation of the classic AWF OARC server scenario. Built because the old server was great and it would be a shame not to keep it alive. Thanks to hidden_relic and oof2win2 for the original version.",
+  "description": "Rayn's maintained Factorio 2.x version of OARC-RX for modern Factorio. Project page, updates, and bug reports: https://github.com/rayn69420/oarc-rx . Thanks to hidden_relic and oof2win2 for the original version.",
   "factorio_version": "2.0",
   "dependencies": [
     "base >= 2.0.0"
