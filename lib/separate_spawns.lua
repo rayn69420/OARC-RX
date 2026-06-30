@@ -908,8 +908,7 @@ function CleanupPlayerGlobals(playerName)
         player_market.buy_chest.valid then
             player_market.buy_chest.destroy()
         end
-        global.markets[player.name] = nil
-        market.clear_runtime_state(player.name)
+        market.remove_player_market(player.name)
         if player.character then
             market.new(player)
         end
@@ -945,7 +944,9 @@ function CleanupPlayerGlobals(playerName)
         if (#teamMates >= 1) then
             local newOwnerName = table.remove(teamMates) -- Remove 1 to use as new owner.
             TransferOwnershipOfSharedSpawn(playerName, newOwnerName)
-            if global.markets[newOwnerName] then market.deposit(game.players[newOwnerName], old_coins) end
+            if market.has_player_market(newOwnerName) then
+                market.deposit(game.players[newOwnerName], old_coins)
+            end
             local new_owner_market = market.get_market_view(game.players[newOwnerName])
             if new_owner_market and new_owner_market.sell_chest then
                 local sell_chest = new_owner_market.sell_chest

@@ -9,6 +9,12 @@ local console = {
 -- Keep the legacy name so the existing scenario code can continue to work.
 global = storage
 
+local function BindPersistentStorage()
+    if storage and global ~= storage then
+        global = storage
+    end
+end
+
 local color = require("utils/color_presets")
 
 -- control.lua
@@ -91,6 +97,7 @@ RegrowthForceRemoveChunksCmd)
 --   time the game starts
 ----------------------------------------
 script.on_init(function(event)
+    BindPersistentStorage()
     -- Profiler.Start(true)
     helpers.write_file(tools.decon_filepath, "\n", false, 0)
     helpers.write_file(tools.shoot_filepath, "\n", false, 0)
@@ -167,9 +174,13 @@ end)
 -- ###### END FAGC ######
 
 
-script.on_load(function() Compat.handle_factoriomaps() end)
+script.on_load(function()
+    BindPersistentStorage()
+    Compat.handle_factoriomaps()
+end)
 
 script.on_configuration_changed(function(_)
+    BindPersistentStorage()
     EnsureOarcConfig()
     if global.ocfg and global.ocfg.enable_coin_shop then
         market.migrate_all_state()
@@ -386,6 +397,7 @@ script.on_event(defines.events.on_player_ammo_inventory_changed, function(event)
 end)
 
 script.on_event(defines.events.on_player_joined_game, function(event)
+    BindPersistentStorage()
     EnsureOarcConfig()
     logger.on_player_joined_game(event)
     PlayerJoinedMessages(event)
@@ -406,12 +418,14 @@ script.on_event(defines.events.on_player_joined_game, function(event)
 end)
 
 script.on_event(defines.events.on_player_created, function(event)
+    BindPersistentStorage()
     EnsureOarcConfig()
     
     local player = game.players[event.player_index]
     local has_existing_spawn = global.ocore and global.ocore.playerSpawns and
         global.ocore.playerSpawns[player.name]
-    local has_existing_market = global.markets and global.markets[player.name]
+    local has_existing_market = global.ocfg.enable_coin_shop and
+        market.has_player_market(player.name)
 
     -- Hosting a save can recreate the local player event flow in Factorio 2.x.
     -- If we already have persisted state, restore it instead of treating this
@@ -486,6 +500,7 @@ script.on_event(defines.events.on_player_respawned, function(event)
 end)
 
 script.on_event(defines.events.on_player_left_game, function(event)
+    BindPersistentStorage()
     EnsureOarcConfig()
     logger.on_player_left_game(event)
     ServerWriteFile("player_events", game.players[event.player_index].name ..

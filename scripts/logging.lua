@@ -4,6 +4,13 @@ local function ensure_logging_globals()
 	global.playerstats = global.playerstats or {}
 end
 
+local function make_playerstat_entry(placed_count, online_time, existing)
+	local entry = existing or {}
+	entry[1] = placed_count or 0
+	entry[2] = online_time or 0
+	return entry
+end
+
 function M.on_pre_player_died (e)
 	if e.cause and e.cause.type == "character" then --PvP death
 		print("JLOGGER: DIED: PLAYER: " .. game.get_player(e.player_index).name .. " " .. (game.get_player(e.cause.player.index).name or "no-cause"))
@@ -55,7 +62,8 @@ function M.on_player_joined_game(e)
 	ensure_logging_globals()
 	local player = game.get_player(e.player_index)
 	if player and global.playerstats[player.name] == nil then
-		global.playerstats[player.name] = {0, player.online_time or 0}
+		global.playerstats[player.name] =
+			make_playerstat_entry(0, player.online_time or 0)
 	end
 	helpers.write_file("ext/awflogging.out", helpers.table_to_json(
 	{
@@ -83,7 +91,8 @@ function M.on_built_entity(event)
 	local data = global.playerstats[player.name]
 	if data == nil then
 		-- format of array: {entities placed, ticks played}
-		global.playerstats[player.name] = {1, player.online_time or 0}
+		global.playerstats[player.name] =
+			make_playerstat_entry(1, player.online_time or 0)
 	else
 		data[1] = data[1] + 1 --indexes start with 1 in lua
 		global.playerstats[player.name] = data
@@ -103,7 +112,7 @@ function M.logStats(event)
 			local pdat = global.playerstats[p.name]
 			if (pdat == nil) then
 				-- format of array: {entities placed, ticks played}
-				pdat = {0, p.online_time}
+				pdat = make_playerstat_entry(0, p.online_time)
 				print ("JLOGGER: STATS: " .. p.name .. " " .. 0 .. " " .. p.online_time)
 				global.playerstats[p.name] = pdat
 			else
@@ -111,7 +120,8 @@ function M.logStats(event)
 					print ("JLOGGER: STATS: " .. p.name .. " " .. pdat[1] .. " " .. (p.online_time - pdat[2]))
 				end
 				-- update the data
-				global.playerstats[p.name] = {0, p.online_time}
+				global.playerstats[p.name] =
+					make_playerstat_entry(0, p.online_time, pdat)
 			end
 		end
 	end
