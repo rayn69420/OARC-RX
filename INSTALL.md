@@ -37,7 +37,7 @@ If you previously tested the older fork:
 ## Installing A Local Build From This Repository
 
 1. Run `package_mod.bat`.
-2. The script builds `build\oarc-rx_2.0.0.zip`.
+2. The script builds `build\oarc-rx_<version>.zip` using the version from `info.json`.
 3. The script also copies the finished zip into your local Factorio mods folder automatically.
 
 ## Updating

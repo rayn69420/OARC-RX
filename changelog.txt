@@ -1,3 +1,10 @@
+Version: 2.0.1
+Date: 2026-06-30
+  Changes:
+    - Fixed the wallet save/load path so player money now survives Factorio reloads.
+    - Rebound the legacy `global` alias to live Factorio 2.x `storage` during init/load/player restore paths.
+    - Split market runtime, GUI, chest automation, and persistence concerns into dedicated modules for easier maintenance.
+
 Version: 2.0.0
 Date: 2026-06-29
   Changes:
